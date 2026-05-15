@@ -1,0 +1,16 @@
+# Changes here will be overwritten by Copier; DO NOT EDIT MANUALLY.
+_commit: local
+_src_path: .
+author_email: ali@example.com
+author_name: Ali Cabukel
+include_api: true
+include_cli: true
+include_docker: true
+include_playwright: true
+include_scrapy: true
+license: MIT
+package_name: beets
+project_description: Bee Travel eSIM scrapers (Airalo + Vodafone Travel).
+project_name: Beets
+project_slug: beets
+python_version: '3.12'

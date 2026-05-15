@@ -8,23 +8,23 @@ Pick a backend via ``settings.storage.backend``:
 
 Typical usage from a scraper / runner::
 
-    from {{ package_name }}.settings import get_settings
-    from {{ package_name }}.storage import get_backend
+    from beets.settings import get_settings
+    from beets.storage import get_backend
 
     settings = get_settings()
     backend = get_backend(settings)
     await backend.init()
     try:
-        await backend.save("example", records)
+        await backend.save("airalo", records)
     finally:
         await backend.close()
 """
 
 from __future__ import annotations
 
-from {{ package_name }}.settings import Settings, get_settings
-from {{ package_name }}.storage.base import ScrapedItem, StorageBackend
-from {{ package_name }}.storage.jsonl import JSONLBackend
+from beets.settings import Settings, get_settings
+from beets.storage.base import ScrapedItem, StorageBackend
+from beets.storage.jsonl import JSONLBackend
 
 
 def get_backend(settings: Settings | None = None) -> StorageBackend:
@@ -38,7 +38,7 @@ def get_backend(settings: Settings | None = None) -> StorageBackend:
     if name == "sql":
         # Imported lazily so projects that don't use SQL never pay the
         # SQLAlchemy import cost.
-        from {{ package_name }}.storage.sql import SQLAlchemyBackend
+        from beets.storage.sql import SQLAlchemyBackend
 
         return SQLAlchemyBackend(s)
 

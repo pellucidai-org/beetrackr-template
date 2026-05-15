@@ -6,12 +6,12 @@ extraction outcomes, and a heuristic DOM-complexity score.
 
 Typical usage from a scraper::
 
-    from {{ package_name }}.stats import (
+    from beets.stats import (
         page_stats, record_extraction, record_request, set_complexity,
     )
 
     async def scrape_one(url: str) -> dict:
-        with page_stats(target="example", url=url) as stats:
+        with page_stats(target="airalo", url=url) as stats:
             resp = await fetch_url(url)
             record_request()
             set_complexity(html=resp.text)
@@ -30,8 +30,8 @@ stats without worrying about whether it's running inside a scrape session.
 
 from __future__ import annotations
 
-from {{ package_name }}.stats.complexity import compute_page_complexity
-from {{ package_name }}.stats.page_stats import (
+from beets.stats.complexity import compute_page_complexity
+from beets.stats.page_stats import (
     PageStats,
     extracting,
     get_current_stats,

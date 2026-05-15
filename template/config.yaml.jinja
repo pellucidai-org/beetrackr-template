@@ -105,11 +105,7 @@ storage:
   #   sql    - SQLAlchemy async (SQLite by default; switch DB via database_url).
   #   mongo  - placeholder, not yet implemented.
   #   kafka  - placeholder, not yet implemented.
-{% if include_airalo_scraper -%}
-  backend: sql
-{% else -%}
   backend: jsonl
-{% endif -%}
 
   # JSONL backend
   output_dir: ./data

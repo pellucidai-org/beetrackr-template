@@ -1,0 +1,134 @@
+# =============================================================================
+# Travel eSIM Scraper - developer Makefile
+# =============================================================================
+# Usage:  make <target>   (or just `make` for the help listing)
+# =============================================================================
+
+SHELL       := /bin/bash
+MIN_PY      := 3.12
+# Auto-detect a Python >= $(MIN_PY). Override with:  make setup PYTHON=python3.13
+PYTHON      ?= $(shell                                                          \
+  for p in python$(MIN_PY) python3.13 python3.12 python3.11 python3.10 python3; do \
+    command -v $$p >/dev/null 2>&1 || continue;                                 \
+    $$p -c "import sys,re;                                                       \
+m=re.match(r'(\d+)\.(\d+)','$(MIN_PY)');                                        \
+exit(0 if sys.version_info[:2] >= (int(m.group(1)),int(m.group(2))) else 1)"    \
+      >/dev/null 2>&1 && { echo $$p; exit; };                                   \
+  done)
+VENV        ?= .venv
+BIN         := $(VENV)/bin
+PIP         := $(BIN)/pip
+PYTEST      := $(BIN)/pytest
+RUFF        := $(BIN)/ruff
+MYPY        := $(BIN)/mypy
+PRECOMMIT   := $(BIN)/pre-commit
+PACKAGE     := beets
+
+.DEFAULT_GOAL := help
+
+# ---- Help ------------------------------------------------------------------
+
+.PHONY: help
+help:  ## Show this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage: make \033[36m<target>\033[0m\n\nTargets:\n"} \
+	      /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ---- Setup -----------------------------------------------------------------
+
+.PHONY: check-python
+check-python:  ## Verify a suitable Python interpreter is available.
+	@if [ -z "$(PYTHON)" ]; then                                                  \
+	  echo "ERROR: No Python >= $(MIN_PY) found on PATH.";                        \
+	  echo "       Install one (e.g. \`brew install python@$(MIN_PY)\`) or run:"; \
+	  echo "         make setup PYTHON=/path/to/python";                          \
+	  exit 1;                                                                     \
+	fi
+	@command -v $(PYTHON) >/dev/null 2>&1 || {                                    \
+	  echo "ERROR: PYTHON='$(PYTHON)' is not executable.";                        \
+	  exit 1;                                                                     \
+	}
+	@$(PYTHON) -c "import sys, re;                                                \
+m = re.match(r'(\d+)\.(\d+)', '$(MIN_PY)');                                       \
+need = (int(m.group(1)), int(m.group(2)));                                        \
+have = sys.version_info[:2];                                                      \
+sys.exit(0 if have >= need else 2)" || {                                          \
+	  echo "ERROR: $(PYTHON) ($$($(PYTHON) --version 2>&1)) is older than $(MIN_PY)."; \
+	  echo "       Re-run with:  make $(MAKECMDGOALS) PYTHON=python3.13";          \
+	  exit 1;                                                                     \
+	}
+	@echo "Using $(PYTHON) ($$($(PYTHON) --version 2>&1))"
+
+.PHONY: venv
+venv: check-python  ## Create a local virtualenv at $(VENV).
+	@test -d $(VENV) || $(PYTHON) -m venv $(VENV)
+	@$(PIP) install --upgrade pip wheel
+
+.PHONY: install
+install: venv  ## Install the project + dev dependencies.
+	$(PIP) install -e ".[dev]"
+
+.PHONY: setup
+setup: install  ## One-shot setup: install deps, pre-commit, browsers, crawl4ai.
+	$(PRECOMMIT) install
+	$(BIN)/playwright install
+	$(BIN)/crawl4ai-setup
+	@test -f .env || cp .env.template .env
+	@echo ""
+	@echo "Setup complete. Activate the venv with:  source $(BIN)/activate"
+
+# ---- Quality ---------------------------------------------------------------
+
+.PHONY: lint
+lint:  ## Run ruff lint checks.
+	$(RUFF) check .
+
+.PHONY: format
+format:  ## Auto-format with ruff and fix lints.
+	$(RUFF) check --fix .
+	$(RUFF) format .
+
+.PHONY: typecheck
+typecheck:  ## Run mypy.
+	$(MYPY) src
+
+.PHONY: test
+test:  ## Run the test suite.
+	$(PYTEST)
+
+.PHONY: cov
+cov:  ## Run tests with coverage report.
+	$(PYTEST) --cov=$(PACKAGE) --cov-report=term-missing
+
+.PHONY: check
+check: lint typecheck test  ## Run lint + typecheck + tests.
+
+.PHONY: precommit
+precommit:  ## Run pre-commit on all files.
+	$(PRECOMMIT) run --all-files
+
+# ---- Run -------------------------------------------------------------------
+
+.PHONY: run
+run:  ## Run the default scrape target via the CLI.
+	$(BIN)/beets run example
+
+.PHONY: serve
+serve:  ## Launch the FastAPI service with autoreload.
+	$(BIN)/beets serve --reload
+
+.PHONY: crawl
+crawl:  ## Run the example Scrapy spider.
+	$(BIN)/beets crawl example
+
+# ---- Housekeeping ----------------------------------------------------------
+
+.PHONY: clean
+clean:  ## Remove caches and build artifacts.
+	find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \
+	                  -o -name .mypy_cache -o -name .scrapy -o -name "*.egg-info" \) \
+	       -prune -exec rm -rf {} +
+	rm -rf build dist htmlcov .coverage
+
+.PHONY: distclean
+distclean: clean  ## Also remove the virtualenv.
+	rm -rf $(VENV)

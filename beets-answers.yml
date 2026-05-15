@@ -1,0 +1,13 @@
+project_name: Beets
+project_slug: beets
+package_name: beets
+project_description: Bee Travel eSIM scrapers (Airalo + Vodafone Travel).
+author_name: Ali Cabukel
+author_email: ali@example.com
+python_version: "3.12"
+license: MIT
+include_api: true
+include_cli: true
+include_scrapy: true
+include_playwright: true
+include_docker: true

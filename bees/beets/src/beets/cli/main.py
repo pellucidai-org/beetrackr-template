@@ -1,6 +1,6 @@
-"""Typer-based CLI for {{ project_name }}.
+"""Typer-based CLI for Beets (Bee Travel eSIM scrapers).
 
-Run ``{{ project_slug }} --help`` after installing.
+Run ``beets --help`` after installing.
 """
 
 from __future__ import annotations
@@ -8,31 +8,33 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from {{ package_name }} import __version__
-from {{ package_name }}.logging import configure_logging, get_logger
-from {{ package_name }}.settings import get_settings
-from {{ package_name }}.stats import PageStats
+from beets import __version__
+from beets.logging import configure_logging, get_logger
+from beets.settings import get_settings
+from beets.stats import PageStats
 
 app = typer.Typer(
-    name="{{ project_slug }}",
-    help="{{ project_description }}",
+    name="beets",
+    help="Bee Travel eSIM scrapers (Airalo + Vodafone Travel).",
     add_completion=False,
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
 console = Console()
 
+ScrapeProvider = Literal["airalo", "vodafone"]
+
 
 def _version_callback(value: bool) -> None:
     if value:
-        console.print(f"[bold]{{ project_slug }}[/bold] {__version__}")
+        console.print(f"[bold]beets[/bold] {__version__}")
         raise typer.Exit()
 
 
@@ -40,11 +42,16 @@ def _version_callback(value: bool) -> None:
 def _main(
     version: Annotated[
         bool,
-        typer.Option("--version", "-V", help="Show version and exit.", callback=_version_callback,
-                     is_eager=True),
+        typer.Option(
+            "--version",
+            "-V",
+            help="Show version and exit.",
+            callback=_version_callback,
+            is_eager=True,
+        ),
     ] = False,
 ) -> None:
-    """{{ project_name }} CLI."""
+    """Beets CLI."""
     settings = get_settings()
     configure_logging(settings.log_level)
 
@@ -125,7 +132,9 @@ def run(
     out_dir = output or settings.storage.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     jid = job_id or str(uuid4())
-    console.print(f"[bold cyan]job[/bold cyan] [magenta]{jid}[/magenta]  target=[green]{cfg.name}[/green]")
+    console.print(
+        f"[bold cyan]job[/bold cyan] [magenta]{jid}[/magenta]  target=[green]{cfg.name}[/green]"
+    )
     log.info(
         "running.target",
         target=cfg.name,
@@ -134,23 +143,106 @@ def run(
         output=str(out_dir),
     )
 
-{% if include_playwright %}
     if cfg.use_playwright:
-        from {{ package_name }}.scrapers.playwright_runner import run_playwright_target
+        from beets.scrapers.playwright_runner import run_playwright_target
 
-        written, session = asyncio.run(
-            run_playwright_target(cfg, settings, job_id=jid)
-        )
+        written, session = asyncio.run(run_playwright_target(cfg, settings, job_id=jid))
     else:
-{% endif %}
-        from {{ package_name }}.scrapers.httpx_client import run_httpx_target
+        from beets.scrapers.httpx_client import run_httpx_target
 
-        written, session = asyncio.run(
-            run_httpx_target(cfg, settings, out_dir, job_id=jid)
-        )
+        written, session = asyncio.run(run_httpx_target(cfg, settings, out_dir, job_id=jid))
 
     if show_stats:
         _print_session_stats(cfg.name, written, session)
+
+
+@app.command("scrape")
+def scrape_cmd(
+    provider: Annotated[
+        ScrapeProvider,
+        typer.Option(
+            "--provider",
+            "-p",
+            help="Which travel eSIM site to scrape.",
+        ),
+    ] = "airalo",
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            "-n",
+            help="Max pages after the index (smoke tests).",
+        ),
+    ] = None,
+    job_id: Annotated[
+        str | None,
+        typer.Option(
+            "--job-id",
+            help="Reuse a job UUID (defaults to a fresh uuid4 for this run).",
+        ),
+    ] = None,
+    target: Annotated[
+        str | None,
+        typer.Option(
+            "--target",
+            help="Storage target name (defaults to the provider name).",
+        ),
+    ] = None,
+    include_regions: Annotated[
+        bool,
+        typer.Option(
+            "--include-regions/--countries-only",
+            help="(Vodafone) Also scrape regional hub pages, not only countries.",
+        ),
+    ] = False,
+    show_stats: Annotated[
+        bool,
+        typer.Option("--stats/--no-stats", help="Print session stats table when done."),
+    ] = True,
+) -> None:
+    """Scrape Airalo or Vodafone Travel eSIM listings.
+
+    * ``beets scrape -p airalo`` — httpx + bs4, ``/all-esim`` + country pages.
+    * ``beets scrape -p vodafone`` — Playwright, ``/our-destinations`` + JSON-LD plans.
+
+      For generic config-driven targets, use ``beets run <target>`` instead.
+    """
+    settings = get_settings()
+    storage_target = target or provider
+    jid = job_id or str(uuid4())
+    log = get_logger("cli.scrape")
+    console.print(
+        f"[bold cyan]job[/bold cyan] [magenta]{jid}[/magenta]  "
+        f"provider=[green]{provider}[/green]  target=[green]{storage_target}[/green]"
+        + (f"  [dim]limit={limit}[/dim]" if limit is not None else "")
+    )
+
+    if provider == "airalo":
+        from beets.scrapers.airalo import scrape_airalo
+
+        log.info("airalo.scrape.starting", job_id=jid, target=storage_target, limit=limit)
+        written, session = asyncio.run(
+            scrape_airalo(settings, target_name=storage_target, limit=limit, job_id=jid)
+        )
+    elif provider == "vodafone":
+        from beets.scrapers.vodafone import scrape_vodafone
+
+        log.info("vodafone.scrape.starting", job_id=jid, target=storage_target, limit=limit)
+        written, session = asyncio.run(
+            scrape_vodafone(
+                settings,
+                target_name=storage_target,
+                limit=limit,
+                job_id=jid,
+                countries_only=not include_regions,
+            )
+        )
+    else:
+        console.print(f"[red]Unknown provider:[/red] {provider}")
+        raise typer.Exit(code=1)
+
+    if show_stats:
+        _print_session_stats(storage_target, written, session)
 
 
 def _print_session_stats(target: str, written: int, session: PageStats) -> None:
@@ -199,7 +291,6 @@ def _format_artifacts(session: PageStats) -> str:
     return f"{len(session.artifacts)} ({breakdown}, {total_kb:.1f} KB)"
 
 
-{% if include_scrapy %}
 @app.command("crawl")
 def crawl(
     spider: Annotated[str, typer.Argument(help="Scrapy spider name.")] = "example",
@@ -213,27 +304,26 @@ def crawl(
     process.start()
 
 
-{% endif %}
-{% if include_api %}
 @app.command("serve")
 def serve(
     host: Annotated[str | None, typer.Option(help="Override API host.")] = None,
     port: Annotated[int | None, typer.Option(help="Override API port.")] = None,
-    reload: Annotated[bool, typer.Option("--reload/--no-reload", help="Enable autoreload.")] = False,
+    reload: Annotated[
+        bool, typer.Option("--reload/--no-reload", help="Enable autoreload.")
+    ] = False,
 ) -> None:
     """Run the FastAPI service with uvicorn."""
     import uvicorn
 
     settings = get_settings()
     uvicorn.run(
-        "{{ package_name }}.api.app:app",
+        "beets.api.app:app",
         host=host or settings.api.host,
         port=port or settings.api.port,
         reload=reload or settings.api.reload,
     )
 
 
-{% endif %}
 # ---------------------------------------------------------------------------
 # db: bootstrap / wipe the SQL schema
 # ---------------------------------------------------------------------------
@@ -254,7 +344,7 @@ def db_init() -> None:
         raise typer.Exit()
 
     async def _run() -> None:
-        from {{ package_name }}.storage.sql import SQLAlchemyBackend
+        from beets.storage.sql import SQLAlchemyBackend
 
         backend = SQLAlchemyBackend(settings)
         await backend.init()
@@ -283,7 +373,7 @@ def db_drop(
     async def _run() -> None:
         from sqlalchemy.ext.asyncio import create_async_engine
 
-        from {{ package_name }}.storage.models import Base
+        from beets.storage.models import Base
 
         engine = create_async_engine(settings.storage.database_url)
         async with engine.begin() as conn:

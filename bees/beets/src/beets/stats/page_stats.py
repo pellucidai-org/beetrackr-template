@@ -8,7 +8,7 @@ Every page-scrape produces a ``PageStats`` instance carrying:
   - ``job_id``   - same UUID for every page in a single scrape run/CLI call.
   - ``record_id``- unique UUID for this page (1:1 with the persisted record).
   - ``scraper_key`` - tag for the scraper that produced this page
-    (e.g. ``"httpx"``, ``"playwright"``, ``"example"``).
+    (e.g. ``"httpx"``, ``"playwright"``, ``"airalo"``).
 
 * **Counters**: ``page_requests``, ``clicks``, ``screenshots``, ``videos``,
   ``llm_calls`` (+ token usage), ``extractions_succeeded`` / ``_failed``.
@@ -24,18 +24,19 @@ Every page-scrape produces a ``PageStats`` instance carrying:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
-from {{ package_name }}.artifacts.models import PageArtifacts
+from beets.artifacts.models import PageArtifacts
 
 
 def _utcnow() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _new_id() -> str:
@@ -55,7 +56,7 @@ class PageStats:
     job_id: str = ""
     # Unique per page; persisted alongside the record for joins.
     record_id: str = field(default_factory=_new_id)
-    # Tag for the scraper that produced this record (e.g. "httpx", "playwright").
+    # Tag for the scraper that produced this record (e.g. "httpx", "airalo").
     scraper_key: str = ""
 
     target: str = ""
@@ -91,7 +92,7 @@ class PageStats:
 
     # ---- artifacts -----------------------------------------------------
     # Files produced during this page-scrape (html, markdown, screenshot,
-    # video, ...). Mutate via :func:`{{ package_name }}.artifacts.record_artifact`.
+    # video, ...). Mutate via :func:`airalo.artifacts.record_artifact`.
     artifacts: PageArtifacts = field(default_factory=PageArtifacts)
 
     # =====================================================================
@@ -142,7 +143,7 @@ class PageStats:
         """Set complexity; keeps the maximum if called more than once."""
         self.page_complexity = max(self.page_complexity, float(score))
 
-    def finalize(self) -> "PageStats":
+    def finalize(self) -> PageStats:
         if self.end_timestamp is None:
             self.end_timestamp = _utcnow()
         # Close a dangling extraction window so the caller always sees a value.
@@ -154,7 +155,7 @@ class PageStats:
     # aggregation
     # =====================================================================
 
-    def merge(self, other: "PageStats") -> None:
+    def merge(self, other: PageStats) -> None:
         """Additively fold ``other`` into ``self``. Complexity becomes max."""
         self.page_requests += other.page_requests
         self.clicks += other.clicks
@@ -358,7 +359,7 @@ def set_complexity(score: float | None = None, *, html: str | None = None) -> No
     if (s := _current.get()) is None:
         return
     if html is not None:
-        from {{ package_name }}.stats.complexity import compute_page_complexity
+        from beets.stats.complexity import compute_page_complexity
 
         score = compute_page_complexity(html)
     if score is not None:

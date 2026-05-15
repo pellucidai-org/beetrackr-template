@@ -1,0 +1,125 @@
+# =============================================================================
+# Beets - Bee Travel eSIM scrapers
+# =============================================================================
+
+scraper:
+  user_agent: "Beets/0.1 (+https://beetrackr.example)"
+  request_timeout: 30
+  max_retries: 3
+  retry_backoff: 1.5
+  concurrency: 8
+  respect_robots_txt: true
+  default_headers:
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    Accept-Language: "en-US,en;q=0.9"
+  save_raw_html: false
+  raw_html_dir: ./data/html
+  save_markdown: false
+  markdown_dir: ./data/markdown
+
+playwright:
+  headless: true
+  browser: chromium
+  navigation_timeout_ms: 30000
+  viewport:
+    width: 1366
+    height: 768
+  block_resource_types:
+    - image
+    - media
+    - font
+  launch_max_retries: 3
+  launch_retry_backoff: 2.0
+  record_video: false
+  record_video_dir: ./data/videos
+  record_video_size:
+    width: 1280
+    height: 720
+  screenshot: false
+  screenshot_dir: ./data/screenshots
+  screenshot_full_page: true
+  screenshot_format: png
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: false
+  api_key: change-me
+  jwt_secret: change-me-in-production
+  jwt_lifetime_seconds: 3600
+  cookie_name: beets_auth
+  cookie_secure: false
+  cookie_samesite: lax
+  allow_registration: true
+  verify_users: false
+  database_url: null
+  enable_ui: true
+  ui_page_size: 25
+  ui_title: "Beets dashboard"
+
+scrapy:
+  concurrent_requests: 16
+  concurrent_requests_per_domain: 8
+  download_delay: 0.5
+  download_timeout: 30
+  autothrottle:
+    enabled: true
+    start_delay: 1.0
+    max_delay: 10.0
+    target_concurrency: 4.0
+  playwright:
+    enabled: true
+    default_navigation_timeout: 30000
+
+storage:
+  backend: sql
+  output_dir: ./data
+  format: jsonl
+  database_url: sqlite+aiosqlite:///./data/scraper.db
+  sql_table: scraped_items
+  sql_echo: false
+  sql_pool_size: 5
+  sql_create_tables: true
+
+targets:
+  - name: airalo
+    description: "Airalo.com listings (use ``beets scrape --provider airalo``)."
+    start_urls:
+      - "https://www.airalo.com/all-esim"
+    allowed_domains:
+      - www.airalo.com
+      - airalo.com
+    use_playwright: false
+    selectors:
+      title: "h1::text"
+    pagination:
+      enabled: false
+      next_selector: ""
+      max_pages: 1
+  - name: vodafone
+    description: "Vodafone Travel (use ``beets scrape --provider vodafone``)."
+    start_urls:
+      - "https://travel.vodafone.com/our-destinations"
+    allowed_domains:
+      - travel.vodafone.com
+    use_playwright: true
+    selectors:
+      title: "h1::text"
+    pagination:
+      enabled: false
+      next_selector: ""
+      max_pages: 1
+  - name: example
+    description: "Example target showing the available knobs."
+    start_urls:
+      - "https://example.com/"
+    allowed_domains:
+      - example.com
+    use_playwright: false
+    selectors:
+      title: "h1::text"
+      links: "a::attr(href)"
+    pagination:
+      enabled: false
+      next_selector: "a.next::attr(href)"
+      max_pages: 5
