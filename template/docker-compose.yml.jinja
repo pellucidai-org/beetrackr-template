@@ -1,0 +1,85 @@
+# docker-compose for {{ project_name }}.
+#
+# Usage:
+#   docker compose build
+#   docker compose run --rm scraper {{ project_slug }} targets
+#   docker compose run --rm scraper {{ project_slug }} run example
+{% if include_api %}
+#   docker compose up api          # FastAPI service on :8000
+{% endif %}
+#   docker compose up -d postgres  # bring up the SQL backend
+#
+# Persistent storage is volume-mounted at ./data, so JSONL output and SQLite
+# files survive across container restarts.
+
+services:
+  scraper:
+    build:
+      context: .
+      args:
+        PYTHON_VERSION: "{{ python_version }}"
+    image: {{ project_slug }}:latest
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    # Default: print CLI help. Override on the command line.
+    {% if include_cli %}
+    command: ["{{ project_slug }}", "--help"]
+    {% endif %}
+
+{% if include_api %}
+  api:
+    image: {{ project_slug }}:latest
+    build:
+      context: .
+      args:
+        PYTHON_VERSION: "{{ python_version }}"
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    {% if include_cli %}
+    command: ["{{ project_slug }}", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    {% else %}
+    command:
+      - python
+      - -m
+      - uvicorn
+      - {{ package_name }}.api.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    {% endif %}
+    depends_on:
+      - postgres
+{% endif %}
+
+  # Optional: enable for the SQL storage backend.
+  # Set STORAGE__BACKEND=sql and
+  # STORAGE__DATABASE_URL=postgresql+asyncpg://scraper:scraper@postgres:5432/scraper
+  # in your .env to make the scraper write here.
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: scraper
+      POSTGRES_PASSWORD: scraper
+      POSTGRES_DB: scraper
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d scraper"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -1,0 +1,665 @@
+"""Server-rendered Jinja2 dashboard.
+
+Routes mounted under ``/ui``:
+
+* ``/ui/login``           — login form (sets the auth cookie).
+* ``/ui/register``        — registration form (when ``api.allow_registration``).
+* ``/ui/dashboard``       — top-level KPIs.
+* ``/ui/jobs``            — paginated jobs list.
+* ``/ui/jobs/{job_id}``   — single-job drill-down.
+* ``/ui/records``         — records list with filters.
+* ``/ui/records/{record_id}`` — full record view (data, metadata, artifacts).
+* ``/ui/distributions``   — Chart.js dashboards (by target / scraper / status / kind / day / complexity).
+
+Auth model: every page except ``login`` / ``register`` requires the cookie
+identity (:func:`current_optional_user`); unauthenticated requests are
+redirected to ``/ui/login?next=<original_path>``.
+"""
+
+from __future__ import annotations
+
+import json as _json
+from datetime import datetime
+from pathlib import Path
+from typing import Annotated, Any
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from airalo import __version__
+from airalo.api.auth.backend import cookie_backend, get_jwt_strategy
+from airalo.api.auth.manager import get_user_manager
+from airalo.api.auth.models import User
+from airalo.api.auth.schemas import UserCreate
+from airalo.api.auth.users import current_optional_user
+from airalo.api.database import get_async_session
+from airalo.api.routes.fetch import (
+    RecordRead,
+    _job_aggregates,
+    _row_to_record,
+)
+from airalo.settings import get_settings
+from airalo.storage.models import PageArtifactORM, ScrapedItemORM
+
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+# ---- Jinja2 filters ------------------------------------------------------
+
+
+def _humansize(n: int | float | None) -> str:
+    if n is None:
+        return "—"
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def _short(s: str | None, n: int = 8) -> str:
+    if not s:
+        return "—"
+    return s[:n]
+
+
+def _format_dt(value: Any) -> str:
+    if not value:
+        return "—"
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value)
+
+
+def _pretty_json(value: Any) -> str:
+    try:
+        return _json.dumps(value, indent=2, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _coerce_json(value: Any) -> Any:
+    """Normalize SQLite JSON columns for templates (dict/list or JSON string)."""
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            return _json.loads(value)
+        except _json.JSONDecodeError:
+            return {}
+    return value
+
+
+def _json_key_count(value: Any) -> int:
+    value = _coerce_json(value)
+    if isinstance(value, dict):
+        return len(value)
+    if isinstance(value, list):
+        return len(value)
+    return 0
+
+
+def _json_preview(value: Any, max_len: int = 96) -> str:
+    value = _coerce_json(value)
+    try:
+        text = _json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+    except (TypeError, ValueError):
+        text = str(value)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+templates.env.filters["humansize"] = _humansize
+templates.env.filters["short"] = _short
+templates.env.filters["fmt_dt"] = _format_dt
+templates.env.filters["pretty_json"] = _pretty_json
+templates.env.filters["json_key_count"] = _json_key_count
+templates.env.filters["json_preview"] = _json_preview
+
+
+# ---- Helpers -------------------------------------------------------------
+
+
+def _record_for_template(row: ScrapedItemORM | RecordRead) -> dict[str, Any]:
+    """Plain dict for Jinja (avoids Pydantic ``metadata`` quirks in templates)."""
+    rec = _row_to_record(row) if isinstance(row, ScrapedItemORM) else row
+    view = rec.model_dump()
+    view["data"] = _coerce_json(view.get("data"))
+    view["metadata"] = _coerce_json(view.get("metadata"))
+    return view
+
+
+def _ctx(request: Request, user: User | None, **extra: Any) -> dict[str, Any]:
+    """Common template context (settings, user, version, current path)."""
+    settings = get_settings()
+    return {
+        "user": user,
+        "app_name": settings.app_name,
+        "ui_title": settings.api.ui_title,
+        "version": __version__,
+        "allow_registration": settings.api.allow_registration,
+        "current_path": request.url.path,
+        **extra,
+    }
+
+
+def _render(
+    request: Request,
+    name: str,
+    user: User | None,
+    **extra: Any,
+) -> Response:
+    """Wrapper around Jinja2Templates.TemplateResponse using the new signature."""
+    return templates.TemplateResponse(request, name, _ctx(request, user, **extra))
+
+
+def _login_redirect(request: Request) -> RedirectResponse:
+    """Send unauthenticated requests to /ui/login with a return URL."""
+    next_param = quote(
+        str(request.url.path) + (f"?{request.url.query}" if request.url.query else "")
+    )
+    return RedirectResponse(
+        url=f"/ui/login?next={next_param}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+def _safe_next(next_url: str | None) -> str:
+    """Whitelist relative paths only (defends against open-redirect)."""
+    if not next_url or not next_url.startswith("/") or next_url.startswith("//"):
+        return "/ui/dashboard"
+    return next_url
+
+
+# ---- Router --------------------------------------------------------------
+
+
+def build_ui_router() -> APIRouter:
+    router = APIRouter(prefix="/ui", tags=["ui"], default_response_class=HTMLResponse)
+
+    # ---- Auth pages ------------------------------------------------------
+
+    @router.get("/login", response_class=HTMLResponse)
+    async def login_page(
+        request: Request,
+        next: Annotated[str | None, Query()] = None,
+        error: Annotated[str | None, Query()] = None,
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if user is not None:
+            return RedirectResponse(_safe_next(next), status_code=status.HTTP_303_SEE_OTHER)
+        return _render(request, "auth/login.html", None, next=_safe_next(next), error=error)
+
+    @router.post("/login")
+    async def login_submit(
+        request: Request,
+        username: Annotated[str, Form()],
+        password: Annotated[str, Form()],
+        next: Annotated[str | None, Form()] = None,
+        user_manager=Depends(get_user_manager),
+    ) -> Response:
+        from fastapi_users.exceptions import UserNotExists
+
+        try:
+            user = await user_manager.get_by_email(username)
+        except UserNotExists:
+            return RedirectResponse(
+                url=f"/ui/login?error=invalid&next={quote(_safe_next(next))}",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
+
+        verified, updated_password = user_manager.password_helper.verify_and_update(
+            password, user.hashed_password
+        )
+        if not verified:
+            return RedirectResponse(
+                url=f"/ui/login?error=invalid&next={quote(_safe_next(next))}",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
+        if updated_password is not None:
+            await user_manager.user_db.update(user, {"hashed_password": updated_password})
+
+        strategy = get_jwt_strategy()
+        login_resp = await cookie_backend.login(strategy, user)
+        target_url = _safe_next(next)
+        redirect = RedirectResponse(url=target_url, status_code=status.HTTP_303_SEE_OTHER)
+        for key, value in login_resp.headers.items():
+            redirect.headers.append(key, value)
+        return redirect
+
+    @router.post("/logout")
+    async def logout_submit(
+        request: Request,
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        strategy = get_jwt_strategy()
+        token = request.cookies.get(get_settings().api.cookie_name) or ""
+        logout_resp = await cookie_backend.logout(strategy, user, token) if user else Response()
+        redirect = RedirectResponse(url="/ui/login", status_code=status.HTTP_303_SEE_OTHER)
+        for key, value in logout_resp.headers.items():
+            redirect.headers.append(key, value)
+        return redirect
+
+    @router.get("/register", response_class=HTMLResponse)
+    async def register_page(
+        request: Request,
+        error: Annotated[str | None, Query()] = None,
+        ok: Annotated[bool, Query()] = False,
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if not get_settings().api.allow_registration:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Registration disabled")
+        if user is not None:
+            return RedirectResponse("/ui/dashboard", status_code=status.HTTP_303_SEE_OTHER)
+        return _render(request, "auth/register.html", None, error=error, ok=ok)
+
+    @router.post("/register")
+    async def register_submit(
+        request: Request,
+        email: Annotated[str, Form()],
+        password: Annotated[str, Form()],
+        user_manager=Depends(get_user_manager),
+    ) -> Response:
+        if not get_settings().api.allow_registration:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Registration disabled")
+        try:
+            await user_manager.create(
+                UserCreate(email=email, password=password),
+                safe=True,
+                request=request,
+            )
+        except Exception as exc:
+            return RedirectResponse(
+                url=f"/ui/register?error={quote(type(exc).__name__)}",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
+        return RedirectResponse(url="/ui/login?ok=1", status_code=status.HTTP_303_SEE_OTHER)
+
+    # ---- Protected pages -------------------------------------------------
+
+    @router.get("/", include_in_schema=False)
+    async def ui_root() -> RedirectResponse:
+        return RedirectResponse("/ui/dashboard", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    @router.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard(
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        records = (await session.scalar(select(func.count(ScrapedItemORM.id)))) or 0
+        jobs = (await session.scalar(select(func.count(func.distinct(ScrapedItemORM.job_id))))) or 0
+        targets = (
+            await session.scalar(select(func.count(func.distinct(ScrapedItemORM.target))))
+        ) or 0
+        scrapers = (
+            await session.scalar(select(func.count(func.distinct(ScrapedItemORM.scraper_key))))
+        ) or 0
+        artifacts = (await session.scalar(select(func.count(PageArtifactORM.id)))) or 0
+        success = (
+            await session.scalar(
+                select(func.count())
+                .select_from(ScrapedItemORM)
+                .where(ScrapedItemORM.status.between(200, 399))
+            )
+        ) or 0
+        failure = (
+            await session.scalar(
+                select(func.count())
+                .select_from(ScrapedItemORM)
+                .where((ScrapedItemORM.status >= 400) | (ScrapedItemORM.status.is_(None)))
+            )
+        ) or 0
+
+        recent_jobs = await _job_aggregates(session, limit=5, offset=0)
+        recent_rows = (
+            (
+                await session.execute(
+                    select(ScrapedItemORM).order_by(ScrapedItemORM.scraped_at.desc()).limit(10)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        return _render(
+            request,
+            "dashboard.html",
+            user,
+            summary={
+                "records": int(records),
+                "jobs": int(jobs),
+                "targets": int(targets),
+                "scrapers": int(scrapers),
+                "artifacts": int(artifacts),
+                "success": int(success),
+                "failure": int(failure),
+            },
+            recent_jobs=recent_jobs,
+            recent_records=[_record_for_template(r) for r in recent_rows],
+        )
+
+    # ---- Jobs ----
+
+    @router.get("/jobs", response_class=HTMLResponse)
+    async def jobs_page(
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        jobs = await _job_aggregates(session, limit=limit, offset=offset)
+        total = (
+            await session.scalar(select(func.count(func.distinct(ScrapedItemORM.job_id))))
+        ) or 0
+        return _render(
+            request,
+            "jobs.html",
+            user,
+            jobs=jobs,
+            total=int(total),
+            limit=limit,
+            offset=offset,
+        )
+
+    @router.get("/jobs/{job_id}", response_class=HTMLResponse)
+    async def job_detail_page(
+        job_id: str,
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        summaries = await _job_aggregates(session, job_id=job_id)
+        if not summaries:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+        summary = summaries[0]
+
+        records = (
+            (
+                await session.execute(
+                    select(ScrapedItemORM)
+                    .where(ScrapedItemORM.job_id == job_id)
+                    .order_by(ScrapedItemORM.scraped_at.desc())
+                    .limit(200)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        artifacts = (
+            (
+                await session.execute(
+                    select(PageArtifactORM)
+                    .where(PageArtifactORM.job_id == job_id)
+                    .order_by(PageArtifactORM.created_at.desc())
+                    .limit(200)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        by_kind_rows = (
+            await session.execute(
+                select(PageArtifactORM.kind, func.count(PageArtifactORM.id))
+                .where(PageArtifactORM.job_id == job_id)
+                .group_by(PageArtifactORM.kind)
+            )
+        ).all()
+        artifacts_by_kind = {k or "(none)": int(c) for k, c in by_kind_rows}
+
+        return _render(
+            request,
+            "job_detail.html",
+            user,
+            summary=summary,
+            records=[_record_for_template(r) for r in records],
+            artifacts=artifacts,
+            artifacts_by_kind=artifacts_by_kind,
+        )
+
+    # ---- Records ----
+
+    @router.get("/records", response_class=HTMLResponse)
+    async def records_page(
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+        target: Annotated[str | None, Query()] = None,
+        job_id: Annotated[str | None, Query()] = None,
+        scraper_key: Annotated[str | None, Query()] = None,
+        status_code: Annotated[int | None, Query(alias="status")] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 25,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        filters = []
+        if target:
+            filters.append(ScrapedItemORM.target == target)
+        if job_id:
+            filters.append(ScrapedItemORM.job_id == job_id)
+        if scraper_key:
+            filters.append(ScrapedItemORM.scraper_key == scraper_key)
+        if status_code is not None:
+            filters.append(ScrapedItemORM.status == status_code)
+
+        count_stmt = select(func.count()).select_from(ScrapedItemORM)
+        stmt = select(ScrapedItemORM).order_by(ScrapedItemORM.scraped_at.desc())
+        for f in filters:
+            count_stmt = count_stmt.where(f)
+            stmt = stmt.where(f)
+
+        total = (await session.scalar(count_stmt)) or 0
+        rows = (await session.execute(stmt.limit(limit).offset(offset))).scalars().all()
+
+        targets = list(
+            (
+                await session.execute(
+                    select(ScrapedItemORM.target).distinct().order_by(ScrapedItemORM.target)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        scrapers = list(
+            (
+                await session.execute(
+                    select(ScrapedItemORM.scraper_key)
+                    .distinct()
+                    .order_by(ScrapedItemORM.scraper_key)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        return _render(
+            request,
+            "records.html",
+            user,
+            records=[_record_for_template(r) for r in rows],
+            total=int(total),
+            limit=limit,
+            offset=offset,
+            filters={
+                "target": target,
+                "job_id": job_id,
+                "scraper_key": scraper_key,
+                "status": status_code,
+            },
+            targets=targets,
+            scrapers=scrapers,
+        )
+
+    @router.get("/records/{record_id}", response_class=HTMLResponse)
+    async def record_detail_page(
+        record_id: str,
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        row = (
+            await session.execute(
+                select(ScrapedItemORM).where(ScrapedItemORM.record_id == record_id)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Record not found")
+
+        artifacts = (
+            (
+                await session.execute(
+                    select(PageArtifactORM)
+                    .where(PageArtifactORM.record_id == record_id)
+                    .order_by(PageArtifactORM.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        return _render(
+            request,
+            "record_detail.html",
+            user,
+            record=_record_for_template(row),
+            artifacts=artifacts,
+        )
+
+    # ---- Distributions ----
+
+    @router.get("/distributions", response_class=HTMLResponse)
+    async def distributions_page(
+        request: Request,
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+        user: User | None = Depends(current_optional_user),
+    ) -> Response:
+        if user is None:
+            return _login_redirect(request)
+
+        # Pre-aggregate everything server-side so the template just feeds Chart.js.
+        by_target = (
+            await session.execute(
+                select(ScrapedItemORM.target, func.count(ScrapedItemORM.id))
+                .group_by(ScrapedItemORM.target)
+                .order_by(func.count(ScrapedItemORM.id).desc())
+            )
+        ).all()
+        by_scraper = (
+            await session.execute(
+                select(ScrapedItemORM.scraper_key, func.count(ScrapedItemORM.id))
+                .group_by(ScrapedItemORM.scraper_key)
+                .order_by(func.count(ScrapedItemORM.id).desc())
+            )
+        ).all()
+        by_status = (
+            await session.execute(
+                select(ScrapedItemORM.status, func.count(ScrapedItemORM.id))
+                .group_by(ScrapedItemORM.status)
+                .order_by(func.count(ScrapedItemORM.id).desc())
+            )
+        ).all()
+        by_kind = (
+            await session.execute(
+                select(PageArtifactORM.kind, func.count(PageArtifactORM.id))
+                .group_by(PageArtifactORM.kind)
+                .order_by(func.count(PageArtifactORM.id).desc())
+            )
+        ).all()
+
+        # Complexity histogram (Python-side because of JSON path portability).
+        md_rows = (
+            (
+                await session.execute(
+                    select(ScrapedItemORM.metadata_).where(ScrapedItemORM.metadata_.is_not(None))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        scores: list[float] = []
+        for md in md_rows:
+            if not isinstance(md, dict):
+                continue
+            stats = md.get("stats") if isinstance(md.get("stats"), dict) else None
+            if not stats:
+                continue
+            score = stats.get("page_complexity_score")
+            if isinstance(score, (int, float)):
+                scores.append(float(score))
+
+        bins = 10
+        if scores:
+            lo, hi = min(scores), max(scores)
+            if hi == lo:
+                complexity = [{"label": f"{lo:.1f}", "count": len(scores)}]
+            else:
+                w = (hi - lo) / bins
+                complexity = []
+                for i in range(bins):
+                    lower = lo + i * w
+                    upper = lower + w if i < bins - 1 else hi + 1e-9
+                    c = sum(1 for s in scores if lower <= s < upper)
+                    complexity.append({"label": f"{lower:.0f}-{upper:.0f}", "count": c})
+        else:
+            complexity = []
+
+        # Dialect-aware date bucketing for the timeline chart.
+        url = get_settings().api.database_url or get_settings().storage.database_url
+        if url.startswith("sqlite"):
+            day_expr = func.strftime("%Y-%m-%d", ScrapedItemORM.scraped_at)
+        else:
+            day_expr = func.to_char(ScrapedItemORM.scraped_at, "YYYY-MM-DD")
+        day_label = day_expr.label("d")
+        timeline_rows = (
+            await session.execute(
+                select(day_label, func.count(ScrapedItemORM.id))
+                .group_by(day_label)
+                .order_by(day_label)
+            )
+        ).all()
+
+        return _render(
+            request,
+            "distributions.html",
+            user,
+            by_target=[{"key": k or "(none)", "count": int(c)} for k, c in by_target],
+            by_scraper=[{"key": k or "(none)", "count": int(c)} for k, c in by_scraper],
+            by_status=[
+                {"key": str(k) if k is not None else "(none)", "count": int(c)}
+                for k, c in by_status
+            ],
+            by_kind=[{"key": k or "(none)", "count": int(c)} for k, c in by_kind],
+            complexity=complexity,
+            timeline=[{"date": d, "count": int(c)} for d, c in timeline_rows],
+        )
+
+    return router

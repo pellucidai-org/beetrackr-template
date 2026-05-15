@@ -1,0 +1,146 @@
+# =============================================================================
+# Airalo Scraper - scraper configuration
+# =============================================================================
+# Static, version-controlled configuration for spiders, targets and parsers.
+# Secrets and per-environment overrides belong in `.env`, not here.
+#
+# This file is loaded by `airalo.settings.Settings` at startup.
+# =============================================================================
+
+scraper:
+  user_agent: "Airalo Scraper/0.1 (+https://example.com)"
+  request_timeout: 30          # seconds
+  max_retries: 3
+  retry_backoff: 1.5           # seconds, exponential
+  concurrency: 8
+  respect_robots_txt: true
+  default_headers:
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    Accept-Language: "en-US,en;q=0.9"
+  # Persist unparsed HTML of every fetched page. Useful for debugging and
+  # offline re-parsing. Files land in <raw_html_dir>/<target>/<slug>.html.
+  save_raw_html: false
+  raw_html_dir: ./data/html
+
+  # Convert fetched HTML to Markdown (via markdownify) and persist a copy.
+  # LLM-friendly input format. Files land in <markdown_dir>/<target>/<slug>.md.
+  save_markdown: false
+  markdown_dir: ./data/markdown
+
+playwright:
+  headless: true
+  browser: chromium            # chromium | firefox | webkit
+  navigation_timeout_ms: 30000
+  viewport:
+    width: 1366
+    height: 768
+  block_resource_types:        # speed up by blocking heavy assets
+    - image
+    - media
+    - font
+
+  # Browser-launch resilience (retries the Playwright launch step).
+  launch_max_retries: 3
+  launch_retry_backoff: 2.0    # seconds, exponential
+
+  # Record one .webm per page navigation.
+  record_video: false
+  record_video_dir: ./data/videos
+  record_video_size:
+    width: 1280
+    height: 720
+
+  # Capture a screenshot after every successful navigation.
+  screenshot: false
+  screenshot_dir: ./data/screenshots
+  screenshot_full_page: true
+  screenshot_format: png       # png | jpeg
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: false
+  api_key: change-me                       # legacy header key for /scrape
+
+  # Auth (fastapi-users). Override the secret via API__JWT_SECRET in .env.
+  jwt_secret: change-me-in-production
+  jwt_lifetime_seconds: 3600
+  cookie_name: airalo_auth
+  cookie_secure: false                     # set true behind HTTPS
+  cookie_samesite: lax                     # lax | strict | none
+  allow_registration: true
+  verify_users: false
+
+  # API reads scraped data from this DB. Leave null to reuse storage.database_url.
+  database_url: null
+
+  # UI dashboard
+  enable_ui: true
+  ui_page_size: 25
+  ui_title: "Airalo Scraper dashboard"
+
+scrapy:
+  concurrent_requests: 16
+  concurrent_requests_per_domain: 8
+  download_delay: 0.5          # seconds
+  download_timeout: 30
+  autothrottle:
+    enabled: true
+    start_delay: 1.0
+    max_delay: 10.0
+    target_concurrency: 4.0
+  playwright:
+    enabled: true              # use scrapy-playwright for JS-heavy pages
+    default_navigation_timeout: 30000
+
+storage:
+  # Persistence backend:
+  #   jsonl  - file-per-target JSONL (default; portable).
+  #   sql    - SQLAlchemy async (SQLite by default; switch DB via database_url).
+  #   mongo  - placeholder, not yet implemented.
+  #   kafka  - placeholder, not yet implemented.
+  backend: sql
+
+  # JSONL backend
+  output_dir: ./data
+  format: jsonl                # jsonl | csv | parquet
+
+  # SQL backend (SQLAlchemy). Pick one of:
+  #   sqlite+aiosqlite:///./data/scraper.db
+  #   postgresql+asyncpg://user:pass@host:5432/scraper
+  #   postgresql+asyncpg://postgres:<pwd>@db.<ref>.supabase.co:5432/postgres
+  database_url: sqlite+aiosqlite:///./data/scraper.db
+  sql_table: scraped_items
+  sql_echo: false
+  sql_pool_size: 5
+  sql_create_tables: true      # auto-run create_all() on first save
+
+  # Mongo backend (planned)
+  # mongo_url: mongodb://localhost:27017
+  # mongo_database: scraper
+  # mongo_collection: scraped_items
+
+  # Kafka backend (planned)
+  # kafka_bootstrap_servers: localhost:9092
+  # kafka_topic: scraped_items
+
+# -----------------------------------------------------------------------------
+# Targets: declarative list of sites/spiders to run.
+# Each target can be referenced by name from the CLI / API:
+#   $ airalo run example
+# -----------------------------------------------------------------------------
+targets:
+  - name: example
+    description: "Example target showing the available knobs."
+    start_urls:
+      - "https://example.com/"
+    allowed_domains:
+      - example.com
+    use_playwright: false
+    selectors:
+      title: "h1::text"
+      links: "a::attr(href)"
+    pagination:
+      enabled: false
+      next_selector: "a.next::attr(href)"
+      max_pages: 5
