@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}{{ ui_title }}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <style>
+    body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .truncate-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  {% if user %}
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-6">
+      <a href="/ui/dashboard" class="text-lg font-semibold tracking-tight">
+        {{ app_name }} <span class="text-slate-400 font-normal text-sm">v{{ version }}</span>
+      </a>
+      <nav class="flex items-center gap-1 text-sm">
+        {% set nav = [('/ui/dashboard','Dashboard'), ('/ui/jobs','Jobs'), ('/ui/records','Records'), ('/ui/distributions','Distributions')] %}
+        {% for href, label in nav %}
+          <a href="{{ href }}"
+             class="px-3 py-1.5 rounded-md hover:bg-slate-100 {% if current_path.startswith(href) %}bg-slate-900 text-white hover:bg-slate-900{% else %}text-slate-700{% endif %}">
+            {{ label }}
+          </a>
+        {% endfor %}
+      </nav>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-3 text-sm">
+        <a href="/docs" class="text-slate-500 hover:text-slate-900">API docs</a>
+        <span class="text-slate-300">·</span>
+        <span class="text-slate-600">{{ user.email }}</span>
+        <form method="post" action="/ui/logout">
+          <button type="submit" class="text-slate-500 hover:text-rose-600">Logout</button>
+        </form>
+      </div>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="max-w-7xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 py-8 text-xs text-slate-400">
+    {{ app_name }} · {{ version }} · powered by FastAPI + Tailwind + Chart.js
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

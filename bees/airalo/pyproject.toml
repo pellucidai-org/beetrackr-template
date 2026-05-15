@@ -1,0 +1,120 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "airalo"
+version = "0.1.0"
+description = "Scraper for airalo.com listings."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Ali Cabukel", email = "ali@example.com" },
+]
+keywords = ["scraping", "crawler", "web", "fastapi", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    # HTTP + parsing
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.2",
+    "markdownify>=0.13",
+    "crawl4ai>=0.7",
+    # Settings
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-dotenv>=1.0",
+    "PyYAML>=6.0",
+    # Storage / ORM (drivers for SQLite + PostgreSQL/Supabase)
+    "SQLAlchemy[asyncio]>=2.0",
+    "aiosqlite>=0.20",
+    "asyncpg>=0.29",
+    "greenlet>=3.0",
+    # Templating
+    "Jinja2>=3.1",
+    # UX
+    "tqdm>=4.66",
+    # Resilience
+    "tenacity>=8.3",
+    # Browser automation
+    "playwright>=1.45",
+    # Scrapy
+    "scrapy>=2.11",
+    "scrapy-playwright>=0.0.34",
+    # CLI
+    "typer>=0.12",
+    "rich>=13.7",
+    # API + auth + UI templates
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "fastapi-users[sqlalchemy]>=14.0",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.2",
+    # Logging
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "types-PyYAML>=6.0",
+    "types-tqdm>=4.66",
+    "types-beautifulsoup4>=4.12",
+]
+
+
+[project.scripts]
+airalo = "airalo.cli.main:app"
+
+[project.urls]
+Homepage = "https://example.com/airalo"
+Repository = "https://example.com/airalo"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/airalo"]
+
+# Ship Jinja2 dashboard templates alongside the Python package.
+[tool.hatch.build.targets.wheel.force-include]
+"src/airalo/api/templates" = "airalo/api/templates"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI relies on calling these in default args.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]
+asyncio_mode = "auto"

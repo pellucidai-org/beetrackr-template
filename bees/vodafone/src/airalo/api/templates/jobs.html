@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pill, paginator %}
+{% block title %}Jobs · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Jobs</h1>
+    <p class="text-sm text-slate-500">Every scrape run, grouped by <code class="mono">job_id</code>.</p>
+  </div>
+  <div class="text-sm text-slate-500">{{ total }} total</div>
+</div>
+
+<div class="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-xs uppercase text-slate-500 text-left bg-slate-50 border-b border-slate-100">
+      <tr>
+        <th class="py-2 px-4">Job</th>
+        <th>Targets</th>
+        <th>Scrapers</th>
+        <th class="text-right">Records</th>
+        <th class="text-right">OK / Fail</th>
+        <th>Started</th>
+        <th>Finished</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr class="border-b border-slate-50 hover:bg-slate-50">
+        <td class="py-2 px-4 mono">
+          <a href="/ui/jobs/{{ j.job_id }}" class="text-slate-900 hover:underline">{{ j.job_id | short(12) }}</a>
+        </td>
+        <td>
+          {% for t in j.targets %}{{ pill(t, "sky") }}{% endfor %}
+        </td>
+        <td>
+          {% for s in j.scraper_keys %}{{ pill(s, "violet") }}{% endfor %}
+        </td>
+        <td class="text-right tabular-nums">{{ j.record_count }}</td>
+        <td class="text-right tabular-nums">
+          <span class="text-emerald-600">{{ j.success_count }}</span>
+          <span class="text-slate-300">/</span>
+          <span class="text-rose-600">{{ j.failure_count }}</span>
+        </td>
+        <td class="text-slate-500">{{ j.started_at | fmt_dt }}</td>
+        <td class="text-slate-500">{{ j.finished_at | fmt_dt }}</td>
+        <td class="text-right pr-4">
+          <a class="text-slate-500 hover:text-slate-900" href="/ui/jobs/{{ j.job_id }}">View →</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="text-center py-8 text-slate-400">No jobs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{{ paginator(total, limit, offset, "/ui/jobs?") }}
+{% endblock %}

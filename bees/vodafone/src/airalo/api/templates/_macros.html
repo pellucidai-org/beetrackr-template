@@ -1,0 +1,67 @@
+{# Reusable UI primitives #}
+
+{% macro kpi(label, value, sub=None, tone="slate") -%}
+  {% set tones = {
+    "slate":   "bg-white text-slate-900 border-slate-200",
+    "emerald": "bg-emerald-50 text-emerald-900 border-emerald-100",
+    "rose":    "bg-rose-50 text-rose-900 border-rose-100",
+    "sky":     "bg-sky-50 text-sky-900 border-sky-100",
+    "amber":   "bg-amber-50 text-amber-900 border-amber-100",
+    "violet":  "bg-violet-50 text-violet-900 border-violet-100",
+  } %}
+  <div class="border rounded-2xl p-4 {{ tones[tone] }}">
+    <div class="text-xs uppercase tracking-wide opacity-70">{{ label }}</div>
+    <div class="mt-1 text-2xl font-semibold tabular-nums">{{ value }}</div>
+    {% if sub %}<div class="text-xs mt-1 opacity-70">{{ sub }}</div>{% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro pill(text, tone="slate") -%}
+  {% set tones = {
+    "slate":   "bg-slate-100 text-slate-700",
+    "emerald": "bg-emerald-100 text-emerald-700",
+    "rose":    "bg-rose-100 text-rose-700",
+    "amber":   "bg-amber-100 text-amber-700",
+    "sky":     "bg-sky-100 text-sky-700",
+    "violet":  "bg-violet-100 text-violet-700",
+  } %}
+  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ tones[tone] }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro status_pill(status) -%}
+  {% if status is none %}
+    {{ pill("no-status", "slate") }}
+  {% elif status >= 200 and status < 300 %}
+    {{ pill(status, "emerald") }}
+  {% elif status >= 300 and status < 400 %}
+    {{ pill(status, "sky") }}
+  {% elif status >= 400 and status < 500 %}
+    {{ pill(status, "amber") }}
+  {% else %}
+    {{ pill(status, "rose") }}
+  {% endif %}
+{%- endmacro %}
+
+{% macro paginator(total, limit, offset, base_url) -%}
+  {% set page = (offset // limit) + 1 %}
+  {% set pages = ((total - 1) // limit) + 1 if total else 1 %}
+  <div class="flex items-center justify-between text-sm text-slate-500 mt-4">
+    <div>
+      Page {{ page }} of {{ pages }} · {{ total }} items
+    </div>
+    <div class="flex gap-2">
+      {% if offset > 0 %}
+        <a class="px-3 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50"
+           href="{{ base_url }}offset={{ [offset - limit, 0] | max }}&limit={{ limit }}">
+          ‹ Prev
+        </a>
+      {% endif %}
+      {% if offset + limit < total %}
+        <a class="px-3 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-50"
+           href="{{ base_url }}offset={{ offset + limit }}&limit={{ limit }}">
+          Next ›
+        </a>
+      {% endif %}
+    </div>
+  </div>
+{%- endmacro %}

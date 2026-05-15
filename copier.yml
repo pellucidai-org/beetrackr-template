@@ -1,0 +1,139 @@
+# Copier configuration for the Beetrackr web scraping template.
+# Docs: https://copier.readthedocs.io/en/stable/
+
+_min_copier_version: "9.0.0"
+_subdirectory: template
+_answers_file: .copier-answers.yml
+_envops:
+  keep_trailing_newline: true
+  trim_blocks: true
+  lstrip_blocks: true
+
+_exclude:
+  - "copier.yml"
+  - "~*"
+  - "*.py[co]"
+  - "__pycache__"
+  - ".git"
+  - ".DS_Store"
+  # Optional components: conditionally skipped based on answers.
+  - "{% if not include_api %}src/{{ package_name }}/api{% endif %}"
+  - "{% if not include_api %}src/{{ package_name }}/api/**{% endif %}"
+  - "{% if not include_cli %}src/{{ package_name }}/cli{% endif %}"
+  - "{% if not include_cli %}src/{{ package_name }}/cli/**{% endif %}"
+  - "{% if not include_scrapy %}src/{{ package_name }}/spiders{% endif %}"
+  - "{% if not include_scrapy %}src/{{ package_name }}/spiders/**{% endif %}"
+  - "{% if not include_scrapy %}scrapy.cfg{% endif %}"
+  - "{% if not include_playwright %}src/{{ package_name }}/scrapers/playwright_runner.py{% endif %}"
+  - "{% if not include_airalo_scraper %}src/{{ package_name }}/scrapers/airalo.py{% endif %}"
+  - "{% if not include_docker %}Dockerfile{% endif %}"
+  - "{% if not include_docker %}.dockerignore{% endif %}"
+  - "{% if not include_docker %}docker-compose.yml{% endif %}"
+
+_message_after_copy: |
+  Project scaffolded.
+
+  Next steps:
+      1. cd {{ project_slug }}
+      2. pip install -e ".[dev]"        (or: uv sync)
+      3. pre-commit install
+      4. cp .env.template .env  &&  edit values
+      5. playwright install              (download browsers)
+      6. crawl4ai-setup                  (verify crawl4ai)
+
+_message_after_update: |
+  Project updated to the latest template revision.
+  Review changes with `git diff` and reinstall if dependencies changed.
+
+# -------- Questions --------
+
+project_name:
+  type: str
+  help: "Human-readable project name"
+  default: "My Scraper"
+  validator: "{% if not project_name %}project_name cannot be empty{% endif %}"
+
+project_slug:
+  type: str
+  help: "Project directory name (kebab-case)"
+  default: "{{ project_name | lower | replace(' ', '-') | replace('_', '-') }}"
+  validator: >-
+    {% if not (project_slug | regex_search('^[a-z][a-z0-9\-]*$')) %}
+    project_slug must be lowercase letters, digits and hyphens, starting with a letter
+    {% endif %}
+
+package_name:
+  type: str
+  help: "Importable Python package name (snake_case)"
+  default: "{{ project_slug | replace('-', '_') }}"
+  validator: >-
+    {% if not (package_name | regex_search('^[a-z][a-z0-9_]*$')) %}
+    package_name must be lowercase letters, digits and underscores, starting with a letter
+    {% endif %}
+
+project_description:
+  type: str
+  help: "Short description of the project"
+  default: "A web scraping project built with the Beetrackr template."
+
+author_name:
+  type: str
+  help: "Author / maintainer name"
+  default: "Your Name"
+
+author_email:
+  type: str
+  help: "Author / maintainer email"
+  default: "you@example.com"
+
+python_version:
+  type: str
+  help: "Minimum Python version"
+  default: "3.11"
+  choices:
+    - "3.10"
+    - "3.11"
+    - "3.12"
+    - "3.13"
+
+include_api:
+  type: bool
+  help: "Include a FastAPI service?"
+  default: true
+
+include_cli:
+  type: bool
+  help: "Include a Typer CLI?"
+  default: true
+
+include_scrapy:
+  type: bool
+  help: "Include Scrapy + scrapy-playwright spiders?"
+  default: true
+
+include_playwright:
+  type: bool
+  help: "Include Playwright browser scraper module?"
+  default: true
+
+include_airalo_scraper:
+  type: bool
+  help: >-
+    Include the optional Airalo.com (all-esim) dedicated scraper module + CLI
+    ``scrape`` command? (Off for generic projects; on for the Airalo example bee.)
+  default: false
+
+include_docker:
+  type: bool
+  help: "Generate a Dockerfile + docker-compose.yml for the project?"
+  default: true
+
+license:
+  type: str
+  help: "License"
+  default: "MIT"
+  choices:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - Proprietary

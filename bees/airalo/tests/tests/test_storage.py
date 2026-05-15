@@ -1,0 +1,183 @@
+"""Tests for the storage backends."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from airalo.settings import Settings
+from airalo.storage import get_backend
+
+JOB_ID = "job-aaaa-bbbb-cccc-dddd"
+
+RECORDS = [
+    {
+        "job_id": JOB_ID,
+        "record_id": "rec-1",
+        "scraper_key": "httpx",
+        "url": "https://example.com/a",
+        "status": 200,
+        "data": {"title": "A"},
+        "metadata": {"stats": {"page_requests": 1}},
+    },
+    {
+        "job_id": JOB_ID,
+        "record_id": "rec-2",
+        "scraper_key": "httpx",
+        "url": "https://example.com/b",
+        "status": 200,
+        "data": {"title": "B"},
+        "metadata": {
+            "stats": {"page_requests": 1},
+            "artifacts": {
+                "count": 2,
+                "total_bytes": 0,
+                "by_kind": {"html": "/tmp/x.html", "markdown": "/tmp/x.md"},
+                "items": [
+                    {
+                        "kind": "html",
+                        "path": "/tmp/x.html",
+                        "media_type": "text/html",
+                        "size_bytes": 0,
+                        "width": None,
+                        "height": None,
+                        "duration_ms": None,
+                        "extra": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    {
+                        "kind": "markdown",
+                        "path": "/tmp/x.md",
+                        "media_type": "text/markdown",
+                        "size_bytes": 0,
+                        "width": None,
+                        "height": None,
+                        "duration_ms": None,
+                        "extra": {},
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    },
+                ],
+            },
+        },
+    },
+]
+
+
+# -- JSONL --------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_jsonl_backend_writes_one_line_per_record(tmp_path: Path) -> None:
+    settings = Settings(storage={"backend": "jsonl", "output_dir": tmp_path})
+    backend = get_backend(settings)
+
+    await backend.init()
+    try:
+        n = await backend.save("example", RECORDS)
+    finally:
+        await backend.close()
+
+    assert n == 2
+    out = tmp_path / "example.jsonl"
+    lines = out.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    first = json.loads(lines[0])
+    assert first["target"] == "example"
+    assert first["url"] == "https://example.com/a"
+    assert first["job_id"] == JOB_ID
+    assert first["scraper_key"] == "httpx"
+    assert first["record_id"] == "rec-1"
+    assert first["data"] == {"title": "A"}
+    assert first["metadata"]["stats"]["page_requests"] == 1
+
+
+# -- SQL (SQLite via aiosqlite) ----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sql_backend_persists_and_indexes(tmp_path: Path) -> None:
+    db_path = tmp_path / "scraper.db"
+    settings = Settings(
+        storage={
+            "backend": "sql",
+            "database_url": f"sqlite+aiosqlite:///{db_path}",
+            "sql_create_tables": True,
+        }
+    )
+    backend = get_backend(settings)
+
+    await backend.init()
+    try:
+        n = await backend.save("example", RECORDS)
+    finally:
+        await backend.close()
+
+    assert n == 2
+    assert db_path.exists()
+
+    # Re-query through SQLAlchemy to verify rows landed.
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from airalo.storage.models import ScrapedItemORM
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session:
+        rows = (await session.execute(select(ScrapedItemORM))).scalars().all()
+    await engine.dispose()
+
+    assert len(rows) == 2
+    urls = {r.url for r in rows}
+    assert urls == {"https://example.com/a", "https://example.com/b"}
+    by_url = {r.url: r for r in rows}
+
+    # Every row should share the same job_id; record_ids should be distinct.
+    assert {r.job_id for r in rows} == {JOB_ID}
+    assert len({r.record_id for r in rows}) == 2
+
+    b = by_url["https://example.com/b"]
+    assert b.scraper_key == "httpx"
+    assert b.data == {"title": "B"}
+    assert b.metadata_["artifacts"]["count"] == 2
+    assert b.metadata_["artifacts"]["by_kind"] == {
+        "html": "/tmp/x.html",
+        "markdown": "/tmp/x.md",
+    }
+    assert b.metadata_["stats"]["page_requests"] == 1
+
+    # Artifacts should have been flattened into the page_artifacts table.
+    from airalo.storage.models import PageArtifactORM
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session:
+        arts = (
+            (await session.execute(select(PageArtifactORM).order_by(PageArtifactORM.kind)))
+            .scalars()
+            .all()
+        )
+    await engine.dispose()
+
+    assert [(a.record_id, a.kind, a.path) for a in arts] == [
+        ("rec-2", "html", "/tmp/x.html"),
+        ("rec-2", "markdown", "/tmp/x.md"),
+    ]
+    assert {a.job_id for a in arts} == {JOB_ID}
+
+
+# -- Placeholders -------------------------------------------------------------
+
+
+def test_mongo_backend_is_not_implemented() -> None:
+    settings = Settings(storage={"backend": "mongo"})
+    with pytest.raises(NotImplementedError):
+        get_backend(settings)
+
+
+def test_kafka_backend_is_not_implemented() -> None:
+    settings = Settings(storage={"backend": "kafka"})
+    with pytest.raises(NotImplementedError):
+        get_backend(settings)
