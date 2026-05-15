@@ -1,0 +1,41 @@
+"""Scrapy settings - driven by `beets.settings` (pydantic-settings).
+
+This file is what ``scrapy.cfg`` points to via ``default = ...``.
+"""
+
+from __future__ import annotations
+
+from beets.settings import get_settings
+
+_s = get_settings()
+
+BOT_NAME = "beets"
+
+SPIDER_MODULES = ["beets.spiders"]
+NEWSPIDER_MODULE = "beets.spiders"
+
+ROBOTSTXT_OBEY = _s.scraper.respect_robots_txt
+USER_AGENT = _s.scraper.user_agent
+CONCURRENT_REQUESTS = _s.scrapy.concurrent_requests
+CONCURRENT_REQUESTS_PER_DOMAIN = _s.scrapy.concurrent_requests_per_domain
+DOWNLOAD_DELAY = _s.scrapy.download_delay
+DOWNLOAD_TIMEOUT = _s.scrapy.download_timeout
+
+AUTOTHROTTLE_ENABLED = _s.scrapy.autothrottle.enabled
+AUTOTHROTTLE_START_DELAY = _s.scrapy.autothrottle.start_delay
+AUTOTHROTTLE_MAX_DELAY = _s.scrapy.autothrottle.max_delay
+AUTOTHROTTLE_TARGET_CONCURRENCY = _s.scrapy.autothrottle.target_concurrency
+
+REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
+FEED_EXPORT_ENCODING = "utf-8"
+
+# ---- scrapy-playwright ----
+if _s.scrapy.playwright.enabled:
+    DOWNLOAD_HANDLERS = {
+        "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+        "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    }
+    PLAYWRIGHT_BROWSER_TYPE = _s.playwright.browser
+    PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": _s.playwright.headless}
+    PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT = _s.scrapy.playwright.default_navigation_timeout

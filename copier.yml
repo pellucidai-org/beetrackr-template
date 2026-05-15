@@ -25,7 +25,6 @@ _exclude:
   - "{% if not include_scrapy %}src/{{ package_name }}/spiders/**{% endif %}"
   - "{% if not include_scrapy %}scrapy.cfg{% endif %}"
   - "{% if not include_playwright %}src/{{ package_name }}/scrapers/playwright_runner.py{% endif %}"
-  - "{% if not include_airalo_scraper %}src/{{ package_name }}/scrapers/airalo.py{% endif %}"
   - "{% if not include_docker %}Dockerfile{% endif %}"
   - "{% if not include_docker %}.dockerignore{% endif %}"
   - "{% if not include_docker %}docker-compose.yml{% endif %}"
@@ -115,13 +114,6 @@ include_playwright:
   type: bool
   help: "Include Playwright browser scraper module?"
   default: true
-
-include_airalo_scraper:
-  type: bool
-  help: >-
-    Include the optional Airalo.com (all-esim) dedicated scraper module + CLI
-    ``scrape`` command? (Off for generic projects; on for the Airalo example bee.)
-  default: false
 
 include_docker:
   type: bool

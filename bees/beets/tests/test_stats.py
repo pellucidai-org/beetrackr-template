@@ -1,4 +1,4 @@
-"""Tests for {{ package_name }}.stats: counters, scopes, and complexity."""
+"""Tests for beets.stats: counters, scopes, and complexity."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from {{ package_name }}.stats import (
+from beets.stats import (
     PageStats,
     compute_page_complexity,
     extracting,
@@ -21,7 +21,6 @@ from {{ package_name }}.stats import (
     record_video,
     set_complexity,
 )
-
 
 # ---------------------------------------------------------------------------
 # PageStats dataclass
@@ -95,15 +94,30 @@ def test_to_dict_round_trip_shape() -> None:
     s = PageStats(target="t", url="u").finalize()
     payload = s.to_dict()
     expected = {
-        "job_id", "record_id", "scraper_key",
-        "target", "url",
-        "page_requests", "clicks", "screenshots", "videos",
-        "llm_calls", "llm_input_tokens", "llm_output_tokens", "llm_total_tokens",
-        "extractions_succeeded", "extractions_failed",
-        "extraction_count", "extraction_success_rate",
-        "extraction_started_at", "extraction_finished_at", "extraction_time_ms",
+        "job_id",
+        "record_id",
+        "scraper_key",
+        "target",
+        "url",
+        "page_requests",
+        "clicks",
+        "screenshots",
+        "videos",
+        "llm_calls",
+        "llm_input_tokens",
+        "llm_output_tokens",
+        "llm_total_tokens",
+        "extractions_succeeded",
+        "extractions_failed",
+        "extraction_count",
+        "extraction_success_rate",
+        "extraction_started_at",
+        "extraction_finished_at",
+        "extraction_time_ms",
         "page_complexity",
-        "start_timestamp", "end_timestamp", "duration_ms",
+        "start_timestamp",
+        "end_timestamp",
+        "duration_ms",
     }
     assert expected.issubset(payload.keys())
 
@@ -122,15 +136,13 @@ def test_default_record_id_is_unique_uuid() -> None:
 
 
 def test_page_stats_scope_propagates_job_and_scraper_key() -> None:
-    with page_stats(
-        target="t", url="u", job_id="job-1", scraper_key="httpx"
-    ) as s:
+    with page_stats(target="t", url="u", job_id="job-1", scraper_key="airalo") as s:
         assert s.job_id == "job-1"
-        assert s.scraper_key == "httpx"
+        assert s.scraper_key == "airalo"
         assert s.record_id  # auto-generated UUID
     d = s.to_dict()
     assert d["job_id"] == "job-1"
-    assert d["scraper_key"] == "httpx"
+    assert d["scraper_key"] == "airalo"
     assert d["record_id"] == s.record_id
 
 
@@ -149,9 +161,8 @@ def test_nested_scope_inherits_job_id_from_parent() -> None:
 
 
 def test_extracting_context_records_success_and_time() -> None:
-    with page_stats(target="t", url="u") as s:
-        with extracting():
-            time.sleep(0.02)
+    with page_stats(target="t", url="u") as s, extracting():
+        time.sleep(0.02)
     assert s.extractions_succeeded == 1
     assert s.extractions_failed == 0
     assert s.extraction_time_ms >= 10
@@ -278,7 +289,9 @@ def test_complexity_heavy_html_is_higher() -> None:
         "<html><body>"
         + "".join(f"<div><span>{i}</span></div>" for i in range(2000))
         + "".join(f"<script>x = {i};</script>" for i in range(40))
-        + "<form>" + "".join(f"<input name='i{i}'>" for i in range(30)) + "</form>"
+        + "<form>"
+        + "".join(f"<input name='i{i}'>" for i in range(30))
+        + "</form>"
         + "<iframe src='a'></iframe><iframe src='b'></iframe>"
         + "</body></html>"
     )

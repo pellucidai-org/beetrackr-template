@@ -72,7 +72,7 @@ class PageArtifactORM(Base):
     duplicated for direct "all artifacts in run X" queries without an extra
     join. Combined with the index on ``kind`` this lets dashboards answer
     things like "give me every video file produced by job ``abc`` for target
-    ``airalo``" in a single indexed lookup.
+    ``example``" in a single indexed lookup.
     """
 
     __tablename__ = "page_artifacts"
