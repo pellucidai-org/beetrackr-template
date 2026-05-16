@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from {{ package_name }}.api.auth.users import current_active_user
 from {{ package_name }}.api.database import get_async_session
+from {{ package_name }}.api.query import StatusCodeQuery
 from {{ package_name }}.storage.models import PageArtifactORM, ScrapedItemORM
 
 router = APIRouter(
@@ -170,7 +171,7 @@ async def list_records(
     target: Annotated[str | None, Query()] = None,
     job_id: Annotated[str | None, Query()] = None,
     scraper_key: Annotated[str | None, Query()] = None,
-    status_code: Annotated[int | None, Query(alias="status")] = None,
+    status_code: StatusCodeQuery = None,
     url_contains: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,

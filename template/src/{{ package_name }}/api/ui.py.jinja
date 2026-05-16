@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from {{ package_name }} import __version__
 from {{ package_name }}.api.auth.backend import cookie_backend, get_jwt_strategy
+from {{ package_name }}.api.query import StatusCodeQuery
 from {{ package_name }}.api.auth.manager import get_user_manager
 from {{ package_name }}.api.auth.models import User
 from {{ package_name }}.api.auth.schemas import UserCreate
@@ -449,7 +450,7 @@ def build_ui_router() -> APIRouter:
         target: Annotated[str | None, Query()] = None,
         job_id: Annotated[str | None, Query()] = None,
         scraper_key: Annotated[str | None, Query()] = None,
-        status_code: Annotated[int | None, Query(alias="status")] = None,
+        status_code: StatusCodeQuery = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 25,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> Response:
