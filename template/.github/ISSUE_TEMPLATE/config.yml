@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beetrackr template repo
+    url: https://github.com/pellucidai-org/beetrackr-template
+    about: Report bugs in the Copier template itself (upstream)
+  - name: Beetrackr reference repo
+    url: https://github.com/pellucidai-org/beetrackr
+    about: Full reference implementation (beets)
+issue_templates:
+  - bug_report
+  - feature_request

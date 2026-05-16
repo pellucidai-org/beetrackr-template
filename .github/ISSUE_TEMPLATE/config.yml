@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Beetrackr (reference implementation)
+    url: https://github.com/pellucidai-org/beetrackr
+    about: Main repo with Airalo, Vodafone, Holafly scrapers
+  - name: Copier docs
+    url: https://copier.readthedocs.io/
+    about: How template generation and updates work
+issue_templates:
+  - bug_report
+  - feature_request

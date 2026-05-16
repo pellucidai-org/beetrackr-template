@@ -1,0 +1,132 @@
+name: Bug report
+description: Report broken behavior (scrapers, API, CLI, dashboard)
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **For Cursor / AI agents:** Paste this issue (or a link) into the agent chat.
+        Fill every section you can — empty fields slow down fixes.
+
+        If the bug is in the **Copier template** itself, file upstream at
+        [beetrackr-template](https://github.com/pellucidai-org/beetrackr-template/issues).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what is broken.
+      placeholder: "Filtering records by status returns 422 when the status field is left empty."
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_context
+    attributes:
+      label: Context for AI agents
+      description: Background, constraints, and what you already tried. Main prompt block for Cursor.
+      placeholder: |
+        - Repo area: src/<package>/api/ui.py
+        - Related issue/PR: #
+        - I already tried: ...
+        - If template bug: fix in beetrackr-template `template/src/<package>/...`
+        - Do NOT change: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps so an agent can verify the fix.
+      placeholder: |
+        1. Run `<cli> serve` (e.g. `beets serve`)
+        2. Open http://localhost:8000/ui/records
+        3. Leave Status empty and click Filter
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "Filter applies other fields and ignores empty status."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages, stack traces, or API responses.
+      placeholder: |
+        HTTP 422 with `unable to parse string as an integer` for query param `status`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Helps route the issue and narrow the codebase search.
+      options:
+        - CLI
+        - Scraper (provider-specific)
+        - Scraper (generic / `run <target>`)
+        - API / REST (`/api/fetch`)
+        - Web UI / dashboard (`/ui`)
+        - Storage (SQL / JSONL)
+        - Auth
+        - Docker / CI
+        - Tests
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: paths
+    attributes:
+      label: Relevant paths (optional)
+      description: Files or directories the agent should inspect first.
+      placeholder: "src/my_scraper/api/query.py, src/my_scraper/api/templates/records.html"
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and how you run the project.
+      value: |
+        - OS:
+        - Python:
+        - Install method: uv / pip / docker
+        - Command:
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Definition of done
+      description: Check all that should be true when this bug is fixed.
+      options:
+        - label: Reproduction steps pass manually
+          required: false
+        - label: Automated test(s) added or updated
+          required: false
+        - label: Fix upstream in beetrackr-template (if this is a generated project)
+          required: false
+        - label: No unrelated refactors in the PR
+          required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste terminal output, JSON errors, or attach screenshots in a follow-up comment.
+    validations:
+      required: false
