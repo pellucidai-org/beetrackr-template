@@ -1,0 +1,105 @@
+name: Bug report
+description: Report a bug in the Copier template (scaffolding, Jinja files, defaults)
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **For Cursor / AI agents:** This repo is the **Copier template** (`template/` subdirectory).
+        Fixes usually belong in `template/src/{{ package_name }}/...` (Jinja sources), not only in a generated project.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken in the template or after `copier copy`?
+      placeholder: "Generated projects fail: empty `status` query param returns 422 on /ui/records."
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_context
+    attributes:
+      label: Context for AI agents
+      placeholder: |
+        - Template path: template/src/{{ package_name }}/api/query.py
+        - Also fix in: pellucidai-org/beetrackr (if already fixed there)
+        - Copier answers used: include_api=true, ...
+        - Do NOT change: ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `copier copy ...` into /tmp/test-scraper
+        2. `cd /tmp/test-scraper && uv sync`
+        3. `beets serve` → reproduce bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Copier config (`copier.yml`, questions, excludes)
+        - Jinja template — API / UI
+        - Jinja template — scrapers
+        - Jinja template — CLI
+        - Jinja template — storage / models
+        - Jinja template — tests
+        - Docker / Makefile / pyproject
+        - Pre-commit / CI
+        - Documentation (README)
+        - Generated `.github` issue templates
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: paths
+    attributes:
+      label: Relevant template paths
+      placeholder: "template/src/{{ package_name }}/api/ui.py.jinja"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Definition of done
+      options:
+        - label: Fix applied under `template/` (Jinja sources)
+          required: false
+        - label: Fresh `copier copy` smoke test passes
+          required: false
+        - label: Matching fix in beetrackr main repo (if applicable)
+          required: false
+        - label: No unrelated refactors
+          required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+    validations:
+      required: false

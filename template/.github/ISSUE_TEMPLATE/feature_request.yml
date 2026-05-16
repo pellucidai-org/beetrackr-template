@@ -1,0 +1,124 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **For Cursor / AI agents:** Use this issue as the implementation brief.
+        Clear acceptance criteria and scope boundaries help agents ship correct PRs.
+
+        For template-wide features, consider filing at
+        [beetrackr-template](https://github.com/pellucidai-org/beetrackr-template/issues) instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What should exist when this is done?
+      placeholder: "Add a Holafly scraper that lists all destinations and plan prices."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: Why is this needed? Who benefits?
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_context
+    attributes:
+      label: Context for AI agents
+      description: Architecture notes, patterns to follow, links, and implementation hints.
+      placeholder: |
+        - Follow existing modules under `src/<package>/scrapers/`
+        - Register provider in `src/<package>/cli/main.py` (`ScrapeProvider`)
+        - Add offline tests with HTML fixtures under `tests/fixtures/`
+        - If adding to template for everyone: edit `beetrackr-template/template/`
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: CLI flags, API shape, data model, UI behavior.
+      placeholder: |
+        - CLI: `<cli> scrape -p holafly [--limit N]`
+        - Persist records with `data.packages[{validity_days, price, currency, unlimited}]`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New scraper / provider
+        - Existing scraper enhancement
+        - CLI
+        - API / REST
+        - Web UI / dashboard
+        - Storage / data model
+        - Auth
+        - Observability / stats / artifacts
+        - Developer experience (Makefile, docs)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable checklist — implement until every item is checked.
+      placeholder: |
+        - [ ] `<cli> scrape -p <provider> --limit 3` completes without error
+        - [ ] Records appear in SQL/JSONL with expected `data` shape
+        - [ ] Offline parser tests pass
+        - [ ] README and `config.yaml` updated
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+      description: Explicitly exclude work to prevent scope creep.
+    validations:
+      required: false
+
+  - type: textarea
+    id: paths
+    attributes:
+      label: Likely files to touch (optional)
+      placeholder: "src/<package>/scrapers/, src/<package>/cli/main.py"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Implementation checklist
+      options:
+        - label: Port fix/feature back to beetrackr-template (if applicable)
+          required: false
+        - label: Add or update tests
+          required: false
+        - label: Update README / docs
+          required: false
+        - label: Smoke-tested locally (`pytest` or `make test`)
+          required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: URLs, pages to scrape, or related issues.
+    validations:
+      required: false

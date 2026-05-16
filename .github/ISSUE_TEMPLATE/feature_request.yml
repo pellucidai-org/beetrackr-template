@@ -1,0 +1,100 @@
+name: Feature request
+description: Propose a new template capability or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **For Cursor / AI agents:** Implement in `template/` so every `copier copy` gets the feature.
+        List acceptance criteria that can be verified on a freshly generated project.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: "Add Holafly scraper module and CLI provider to the default template."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+    validations:
+      required: true
+
+  - type: textarea
+    id: agent_context
+    attributes:
+      label: Context for AI agents
+      placeholder: |
+        - Add `template/src/{{ package_name }}/scrapers/holafly.py` (or `.py.jinja` if templating needed)
+        - Wire `ScrapeProvider` in `cli/main.py.jinja`
+        - Mirror patterns from beetrackr/beets
+        - Update `tests/` fixtures
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New scraper / provider in template
+        - API / dashboard
+        - CLI
+        - Storage / data model
+        - Copier questions / optional includes
+        - Docker / dev tooling
+        - Tests / fixtures
+        - Issue templates / GitHub metadata
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] `copier copy` produces working project
+        - [ ] `pytest` passes in generated project
+        - [ ] Documented in template README
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Implementation checklist
+      options:
+        - label: Changes under `template/` only (not hand-edited generated repos)
+          required: false
+        - label: Ported from or synced with beetrackr main repo
+          required: false
+        - label: Tests in template `tests/`
+          required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+    validations:
+      required: false
